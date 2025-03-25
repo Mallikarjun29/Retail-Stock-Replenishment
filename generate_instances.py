@@ -2,7 +2,7 @@ import random
 from dataclasses import dataclass
 from typing import Dict, List
 import numpy as np
-
+import pandas as pd
 @dataclass
 class ReplenishmentConfig:
     # Problem dimensions
@@ -35,7 +35,7 @@ def generate_instance(cfg: ReplenishmentConfig):
     # Generate default values if not provided
     if cfg.warehouse_capacity is None:
         cfg.warehouse_capacity = {
-            p: max(50, int((cfg.num_stores * cfg.num_products * cfg.time_horizon * random.uniform(0.5, 1.5))))
+            p: max(50, int((cfg.num_stores * cfg.num_products * cfg.time_horizon * random.uniform(50, 150))))
             for p in products
         }
 
@@ -96,7 +96,35 @@ if __name__ == "__main__":
     print(f"- Case pack size: {cfg.case_pack_size}")
     print(f"- Time horizon: {cfg.time_horizon} days")
     print(f"- Demand variance: {cfg.demand_variance:.0%}")
+    # Create a list to hold our data
+    data = []
 
+    # Populate the data list
+    for (store, product, day), demand in instance['demand'].items():
+        data.append({
+            'Store': f"Location_{store}",
+            'Product': f"SKU_{product}",
+            'Day': day,
+            'Demand': demand,
+            'Initial Inventory': instance['initial_inventory'][(store, product)],
+            'Warehouse Capacity': cfg.warehouse_capacity[product],
+            'Ordering Cost': cfg.ordering_cost[product],
+            'Min Order Qty': cfg.min_order_qty[product],
+            'Case Pack Size': cfg.case_pack_size[product]
+        })
+
+    # Create DataFrame
+    df = pd.DataFrame(data)
+
+    # Sort the DataFrame for better readability
+    df = df.sort_values(['Store', 'Product', 'Day'])
+
+    # Display the table
+    print(df.to_string(index=False))
+
+    # Print additional information
+    print(f"\nTime horizon: {cfg.time_horizon} days")
+    print(f"Demand variance: {cfg.demand_variance:.0%}")
 # demand[(store_idx, product_idx, day)] = units_needed
 # initial_inventory[(store_idx, product_idx)] = stock_on_hand
 # warehouse_capacity[product_idx] = max_units

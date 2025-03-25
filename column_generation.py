@@ -3,6 +3,7 @@ import pandas as pd
 from generate_instances import generate_instance, ReplenishmentConfig
 from math import ceil
 import math
+
 class ColumnGenerationSolver:
     def __init__(self, instance):
         self.instance = instance
@@ -147,20 +148,37 @@ class ColumnGenerationSolver:
         return new_columns
 
     
-    def solve(self, max_iter=10):
+    def solve(self, optimality_gap_threshold=1e-5, max_iter=1000):
         """Column Generation loop"""
-        for _ in range(max_iter):
-            useless, obj, duals = self.solve_rmp()
+        best_lower_bound = float('inf')
+        i = 0
+
+        while i < max_iter:
+            rmp, obj, duals = self.solve_rmp()
             new_cols = self.pricing_problem(duals)
             
             if not new_cols:
-                print(f"Optimal after {_+1} iterations")
+                print(f"Optimal after {i+1} iterations")
                 break
                 
             self.columns.extend(new_cols)
-        
+            current_obj_value = obj
+            best_lower_bound = min(best_lower_bound, current_obj_value)
+            optimality_gap = (current_obj_value - best_lower_bound) / current_obj_value
+            print(f"Iteration {i+1}: Optimality gap: {100 * optimality_gap:.2f}%")
+            
+            if optimality_gap < optimality_gap_threshold:
+                print(f"Optimality gap threshold reached after {i+1} iterations")
+                break
+
+            i += 1
+
         # Final solution
-        return self.generate_schedule()
+        final_schedule = self.generate_schedule()
+        final_obj_value = value(rmp.objective)
+        final_optimality_gap = (final_obj_value - best_lower_bound) / final_obj_value
+        print(f"Final Optimality Gap: {100 * final_optimality_gap:.2f}%")
+        return final_schedule
 
     def generate_schedule(self):
         """Convert lambda variables to time-series schedule"""
@@ -185,30 +203,53 @@ class ColumnGenerationSolver:
         
         # Check solution status first
         if final_rmp.status != 1:
-            raise Exception("No feasible solution found")
+            print("No feasible solution found")
         
-        # Build schedule with safe value checking
+        # Build schedule with safe value checking and days inventory left
         schedule = []
+        inventory = {(s, p): self.instance["initial_inventory"][(s, p)] 
+                    for s in range(self.cfg.num_stores) 
+                    for p in range(self.cfg.num_products)}
+
         for i in range(len(self.columns)):
             var_value = value(lambda_vars[i])  # Safe value extraction
             if var_value and var_value > 0:
                 col = self.columns[i]
                 for t in range(self.cfg.time_horizon):
                     if col['orders'][t] > 0:
+                        s, p = col['store'], col['product']
+                        units_ordered = col['orders'][t] * self.cfg.case_pack_size[p]
+                        inventory[(s, p)] += units_ordered
+                        demand = self.instance["demand"][(s, p, t)]
+                        inventory[(s, p)] = max(0, inventory[(s, p)] - demand)
+                        
+                        # Calculate days inventory left
+                        future_demand = sum(self.instance["demand"][(s, p, t2)] 
+                                            for t2 in range(t+1, self.cfg.time_horizon))
+                        if future_demand > 0:
+                            days_inventory_left = min(
+                                self.cfg.time_horizon - t - 1,
+                                inventory[(s, p)] / (future_demand / (self.cfg.time_horizon - t - 1))
+                            )
+                        else:
+                            days_inventory_left = self.cfg.time_horizon - t - 1
+
                         schedule.append({
-                            'Store': f"Location_{col['store']}",
-                            'Product': f"SKU_{col['product']}",
+                            'Store': f"Location_{s}",
+                            'Product': f"SKU_{p}",
                             'Day': t,
                             'Case_Packs': col['orders'][t],
-                            'Units': col['orders'][t] * self.cfg.case_pack_size[col['product']]
+                            'Units': units_ordered,
+                            'Days_Inventory_Left': round(days_inventory_left, 1)
                         })
+
         
         return pd.DataFrame(schedule)
 
 
 # Usage
 if __name__ == "__main__":
-    cfg = ReplenishmentConfig(num_products=3, num_stores=2, time_horizon=3)
+    cfg = ReplenishmentConfig(num_products=1, num_stores=10, time_horizon=7)
     instance = generate_instance(cfg)
     
     solver = ColumnGenerationSolver(instance)
@@ -216,4 +257,4 @@ if __name__ == "__main__":
     
     print("\nFinal Replenishment Schedule:")
     print(schedule.to_markdown(index=False))
-    print("RMP status", LpStatus[solver.solve_rmp()[0]])
+    # print("RMP status", LpStatus[solver.solve_rmp()[0]])
