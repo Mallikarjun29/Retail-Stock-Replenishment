@@ -76,7 +76,7 @@ class ColumnGenerationSolver:
         
         # Lambda variables for column selection
         lambda_vars = LpVariable.dicts("lambda", range(len(self.columns)), 
-                                      lowBound=0, cat="Continuous")
+                                      lowBound=0, cat="Binary")
         
         # Objective: Minimize total cost of selected columns
         rmp += lpSum(col['cost'] * lambda_vars[i] 
@@ -97,7 +97,7 @@ class ColumnGenerationSolver:
         # Get dual values for pricing
         duals = {c: rmp.constraints[c].pi for c in rmp.constraints}
         
-        return value(rmp.objective), duals
+        return rmp, value(rmp.objective), duals
     
     def pricing_problem(self, duals):
         """Finds new columns with negative reduced cost"""
@@ -150,7 +150,7 @@ class ColumnGenerationSolver:
     def solve(self, max_iter=10):
         """Column Generation loop"""
         for _ in range(max_iter):
-            obj, duals = self.solve_rmp()
+            useless, obj, duals = self.solve_rmp()
             new_cols = self.pricing_problem(duals)
             
             if not new_cols:
@@ -208,7 +208,7 @@ class ColumnGenerationSolver:
 
 # Usage
 if __name__ == "__main__":
-    cfg = ReplenishmentConfig(num_products=10000, num_stores=5, time_horizon=7)
+    cfg = ReplenishmentConfig(num_products=3, num_stores=2, time_horizon=3)
     instance = generate_instance(cfg)
     
     solver = ColumnGenerationSolver(instance)
@@ -216,3 +216,4 @@ if __name__ == "__main__":
     
     print("\nFinal Replenishment Schedule:")
     print(schedule.to_markdown(index=False))
+    print("RMP status", LpStatus[solver.solve_rmp()[0]])

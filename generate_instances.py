@@ -35,7 +35,7 @@ def generate_instance(cfg: ReplenishmentConfig):
     # Generate default values if not provided
     if cfg.warehouse_capacity is None:
         cfg.warehouse_capacity = {
-            p: max(50, int((cfg.num_stores * cfg.num_products * cfg.time_horizon * random.uniform(5, 15))))
+            p: max(50, int((cfg.num_stores * cfg.num_products * cfg.time_horizon * random.uniform(0.5, 1.5))))
             for p in products
         }
 
@@ -67,7 +67,7 @@ def generate_instance(cfg: ReplenishmentConfig):
             for s in stores:
                 max_demand = total_capacity[p] / (cfg.num_stores * cfg.time_horizon)
                 demand[(s, p, t)] = max(0, int(
-                    np.random.poisson(max_demand * random.uniform(5, 15))
+                    np.random.poisson(max_demand * random.uniform(0.5, 1.5))
                 ))
     
     return {
